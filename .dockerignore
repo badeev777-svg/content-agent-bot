@@ -19,7 +19,6 @@ postgres_data/
 dist/
 build/
 *.egg-info
-README.md
 Plan.md
 CLAUDE.md
 tests/
