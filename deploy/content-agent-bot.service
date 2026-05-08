@@ -1,0 +1,24 @@
+[Unit]
+Description=Content Agent Bot - Telegram SMM Bot
+After=network.target
+
+[Service]
+Type=simple
+User=bot
+WorkingDirectory=/home/bot/content-agent-bot
+EnvironmentFile=/home/bot/content-agent-bot/.env.production
+ExecStart=/usr/bin/python3 -m app.main
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+# Security
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/home/bot/content-agent-bot
+
+[Install]
+WantedBy=multi-user.target

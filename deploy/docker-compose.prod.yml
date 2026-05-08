@@ -1,0 +1,43 @@
+version: '3.9'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: always
+    environment:
+      POSTGRES_USER: ${DB_USER:-bot}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-changeme}
+      POSTGRES_DB: ${DB_NAME:-content_agent}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-bot} -d ${DB_NAME:-content_agent}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - bot-network
+
+  bot:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    restart: always
+    env_file: .env.production
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${DB_USER:-bot}:${DB_PASSWORD:-changeme}@postgres:5432/${DB_NAME:-content_agent}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - bot-network
+    expose:
+      - 8080
+
+networks:
+  bot-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+    driver: local
