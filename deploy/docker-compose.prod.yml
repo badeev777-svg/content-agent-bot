@@ -23,7 +23,9 @@ services:
       context: ..
       dockerfile: Dockerfile
     restart: always
-    env_file: .env.production
+    env_file: ../.env.production
+    volumes:
+      - ../.env.production:/app/.env
     environment:
       DATABASE_URL: postgresql+asyncpg://${DB_USER:-bot}:${DB_PASSWORD:-changeme}@postgres:5432/${DB_NAME:-content_agent}
     depends_on:
