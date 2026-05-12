@@ -19,6 +19,7 @@ PLATFORM_OPTIONS: list[tuple[Platform, str]] = [
     (Platform.TELEGRAM, "Telegram"),
     (Platform.VK, "ВКонтакте"),
     (Platform.STORIES, "Истории"),
+    (Platform.DZEN, "Яндекс Дзен"),
 ]
 
 

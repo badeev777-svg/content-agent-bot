@@ -23,6 +23,7 @@ class Platform(str, enum.Enum):
     TELEGRAM = "telegram"
     VK = "vk"
     STORIES = "stories"
+    DZEN = "dzen"
 
 
 class PostType(str, enum.Enum):
