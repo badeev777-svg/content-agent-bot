@@ -72,7 +72,13 @@ async def plan_week(
         profile.niche if profile else None,
     )
 
-    raw = await llm.complete_json(system=system, user=user, temperature=0.7, max_tokens=4000)
+    raw = await llm.complete_json(
+        system=system,
+        user=user,
+        temperature=0.7,
+        max_tokens=4000,
+        effort="high",  # Opus 4.8 adaptive thinking для глубокого анализа
+    )
     try:
         plan = WeekPlan.model_validate(raw)
     except ValidationError as e:

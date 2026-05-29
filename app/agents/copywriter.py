@@ -84,6 +84,7 @@ async def write_post(
         user=user,
         temperature=0.85,  # повыше — разнообразие лучше для копирайтинга
         max_tokens=2000,
+        effort="medium",  # Medium effort достаточен для копирайтинга, экономим токены
     )
 
     try:
