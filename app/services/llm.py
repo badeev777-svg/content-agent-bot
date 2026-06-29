@@ -14,7 +14,7 @@ import json
 import logging
 from typing import Any, Literal
 
-from anthropic import Anthropic, APIError, APIConnectionError, RateLimitError, APITimeoutError
+from anthropic import AsyncAnthropic, APIError, APIConnectionError, RateLimitError, APITimeoutError
 from tenacity import (
     retry,
     retry_if_exception_type,
@@ -53,8 +53,8 @@ _RETRYABLE_EXCEPTIONS: tuple[type[BaseException], ...] = (
     stop=stop_after_attempt(3),
     reraise=True,
 )
-async def _create_completion(client: Anthropic, **kwargs: Any) -> Any:
-    return client.messages.create(**kwargs)
+async def _create_completion(client: AsyncAnthropic, **kwargs: Any) -> Any:
+    return await client.messages.create(**kwargs)
 
 
 def _strip_json_fences(text: str) -> str:
@@ -71,7 +71,7 @@ class LLMClient:
     def __init__(self, settings: Settings | None = None) -> None:
         s = settings or get_settings()
         self._settings = s
-        self._client = Anthropic(api_key=s.anthropic_api_key)
+        self._client = AsyncAnthropic(api_key=s.anthropic_api_key)
 
     async def complete(
         self,

@@ -21,6 +21,7 @@ _PLATFORM_PROMPT_FILES: dict[Platform, str] = {
     Platform.TELEGRAM: "telegram.txt",
     Platform.VK: "vk.txt",
     Platform.STORIES: "stories.txt",
+    Platform.DZEN: "dzen.txt",
 }
 
 
