@@ -14,10 +14,14 @@ class Settings(BaseSettings):
 
     telegram_bot_token: str = Field(..., description="Token from @BotFather")
 
-    anthropic_api_key: str = Field(..., description="Anthropic API key")
+    openrouter_api_key: str = Field(..., description="OpenRouter API key")
+    openrouter_base_url: str = Field(
+        default="https://openrouter.ai/api/v1",
+        description="OpenRouter base URL",
+    )
     model_name: str = Field(
-        default="claude-opus-4-8",
-        description="Model name (claude-opus-4-8, claude-sonnet-4-6, etc.)",
+        default="anthropic/claude-sonnet-4.6",
+        description="Model name in OpenRouter format (anthropic/claude-sonnet-4.6, etc.)",
     )
     enable_prompt_caching: bool = Field(
         default=True,

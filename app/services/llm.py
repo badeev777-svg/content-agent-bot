@@ -1,4 +1,4 @@
-"""LLM-клиент: Anthropic SDK + Prompt Caching + retry + Effort Control.
+"""LLM-клиент: OpenAI SDK → OpenRouter → Claude + Prompt Caching + retry.
 
 `LLMError.code` — это ключ в `app/services/messages.py`. Хендлер в боте делает:
 
@@ -7,14 +7,12 @@
     except LLMError as e:
         await update.message.reply_text(e.user_message)
         log.warning("LLM failed: %s", e.log_message)
-
-Поддерживает Effort Control для оптимизации токен-траты.
 """
 import json
 import logging
 from typing import Any, Literal
 
-from anthropic import AsyncAnthropic, APIError, APIConnectionError, RateLimitError, APITimeoutError
+from openai import AsyncOpenAI, APIConnectionError, RateLimitError, APITimeoutError, APIError
 from tenacity import (
     retry,
     retry_if_exception_type,
@@ -53,17 +51,17 @@ _RETRYABLE_EXCEPTIONS: tuple[type[BaseException], ...] = (
     stop=stop_after_attempt(3),
     reraise=True,
 )
-async def _create_completion(client: AsyncAnthropic, **kwargs: Any) -> Any:
-    return await client.messages.create(**kwargs)
+async def _create_completion(client: AsyncOpenAI, **kwargs: Any) -> Any:
+    return await client.chat.completions.create(**kwargs)
 
 
 def _strip_json_fences(text: str) -> str:
-    """Anthropic-модели иногда оборачивают JSON в ```json ... ```. Снимаем."""
+    """Модели иногда оборачивают JSON в ```json ... ```. Снимаем."""
     s = text.strip()
     if s.startswith("```"):
         s = s.split("\n", 1)[-1] if "\n" in s else s[3:]
         if s.endswith("```"):
-            s = s[: -3]
+            s = s[:-3]
     return s.strip()
 
 
@@ -71,7 +69,10 @@ class LLMClient:
     def __init__(self, settings: Settings | None = None) -> None:
         s = settings or get_settings()
         self._settings = s
-        self._client = AsyncAnthropic(api_key=s.anthropic_api_key)
+        self._client = AsyncOpenAI(
+            api_key=s.openrouter_api_key,
+            base_url=s.openrouter_base_url,
+        )
 
     async def complete(
         self,
@@ -82,53 +83,35 @@ class LLMClient:
         temperature: float = 0.7,
         max_tokens: int | None = None,
         model: str | None = None,
-        effort: Literal["low", "medium", "high", "max"] = "high",
+        effort: Literal["low", "medium", "high", "max"] = "high",  # зарезервировано, не используется
     ) -> str:
-        """Complete a message with Effort Control.
-
-        Args:
-            system: System prompt
-            user: User message
-            json_mode: Return JSON (claude-opus-4-8 will validate it)
-            temperature: Temperature (0.0-1.0)
-            max_tokens: Max output tokens
-            model: Model name override
-            effort: Effort level for token optimization (low/medium/high/max)
-                   - low: 50% fewer tokens, good for simple tasks
-                   - medium: balanced
-                   - high: better quality (default)
-                   - max: best quality, Opus-tier only
-        """
         s = self._settings
 
-        messages = [
-            {"role": "user", "content": user}
-        ]
-
-        # Build output_config with cache_control if enabled
-        output_config: dict[str, Any] = {"effort": effort}
-
-        # If caching enabled, add cache control to system prompt
+        # Prompt Caching: OpenRouter проксирует cache_control для Anthropic-моделей
         if s.enable_prompt_caching:
-            system = [
+            system_content: Any = [
                 {
                     "type": "text",
                     "text": system,
-                    "cache_control": {"type": "ephemeral"}
+                    "cache_control": {"type": "ephemeral"},
                 }
             ]
+        else:
+            system_content = system
+
+        messages = [
+            {"role": "system", "content": system_content},
+            {"role": "user", "content": user},
+        ]
 
         kwargs: dict[str, Any] = {
             "model": model or s.model_name,
-            "system": system,
             "messages": messages,
             "max_tokens": max_tokens or 4000,
-            "output_config": output_config,
-            "thinking": {
-                "type": "adaptive",
-                "display": "omitted",
-            },
+            "temperature": temperature,
         }
+        if json_mode:
+            kwargs["response_format"] = {"type": "json_object"}
 
         try:
             resp = await _create_completion(self._client, **kwargs)
@@ -139,15 +122,16 @@ class LLMClient:
         except RateLimitError as e:
             raise LLMError("llm_rate_limit", f"rate limit: {e}") from e
         except APIError as e:
-            if "401" in str(e) or "Unauthorized" in str(e):
+            status = getattr(e, "status_code", None)
+            if status == 401 or "Unauthorized" in str(e):
                 err = LLMError("llm_auth_error", f"401 auth: {e}", is_critical=True)
-                await alerts.send_critical(f"Anthropic API key invalid: {e}")
+                await alerts.send_critical(f"OpenRouter API key invalid: {e}")
                 raise err from e
-            if "403" in str(e):
+            if status == 403:
                 err = LLMError("llm_permission_denied", f"403: {e}", is_critical=True)
-                await alerts.send_critical(f"Anthropic permission denied: {e}")
+                await alerts.send_critical(f"OpenRouter permission denied: {e}")
                 raise err from e
-            if "not found" in str(e).lower():
+            if status == 404 or "not found" in str(e).lower():
                 err = LLMError("llm_model_not_found", f"404 model {kwargs['model']}: {e}", is_critical=True)
                 await alerts.send_critical(f"Model not found: {kwargs['model']} ({e})")
                 raise err from e
@@ -157,22 +141,20 @@ class LLMClient:
         except Exception as e:
             raise LLMError("llm_unknown", f"unexpected: {type(e).__name__}: {e}") from e
 
-        if not resp.content or not resp.content[0].text:
+        if not resp.choices or not resp.choices[0].message.content:
             raise LLMError("llm_invalid_json", "empty response from LLM")
 
-        text = resp.content[0].text
+        text = resp.choices[0].message.content
         log.info(
-            "llm ok model=%s effort=%s in_tokens=%s out_tokens=%s",
+            "llm ok model=%s in_tokens=%s out_tokens=%s",
             kwargs["model"],
-            effort,
-            resp.usage.input_tokens,
-            resp.usage.output_tokens,
+            resp.usage.prompt_tokens if resp.usage else "?",
+            resp.usage.completion_tokens if resp.usage else "?",
         )
         return text
 
     async def complete_json(self, **kw: Any) -> dict[str, Any]:
-        # Ensure JSON validation
-        kw.setdefault("effort", "medium")  # Medium effort for JSON tasks
+        kw.setdefault("effort", "medium")
         text = await self.complete(json_mode=True, **kw)
         cleaned = _strip_json_fences(text)
         try:
